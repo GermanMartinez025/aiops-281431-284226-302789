@@ -12,15 +12,29 @@ spec:
     metadata:
       labels:
         app: pharmago-pharmacy-service
+        pharmago.io/workload: application
     spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: node-type
+              - key: workload-pool
                 operator: In
-                values: [backend, all]
+                values: [application]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  pharmago.io/workload: application
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: application
+          effect: NoSchedule
       containers:
       - name: pharmago-pharmacy-service
         image: pharmago-pharmacy-service:latest
