@@ -152,6 +152,11 @@ kubectl apply -f deployments\frontend\ui-deployment.yaml
 
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
+Write-Host "`n10. Aplicando PodDisruptionBudgets..." -ForegroundColor Yellow
+kubectl apply -f policies\pod-disruption-budgets.yaml
+
+if ($LASTEXITCODE -ne 0) { exit 1 }
+
 Write-Host "`n=== Despliegue completado ===" -ForegroundColor Green
 Write-Host "`nVerificando estado de los pods..." -ForegroundColor Yellow
 kubectl get pods -n pharmago -o wide
