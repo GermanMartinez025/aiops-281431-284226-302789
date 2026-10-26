@@ -4,7 +4,15 @@ metadata:
   name: pharmago-api-gateway
   namespace: pharmago
 spec:
-  replicas: 1
+  # Despliegue seguro: Rolling Update sin pérdida de capacidad
+  replicas: 2
+  revisionHistoryLimit: 5
+  minReadySeconds: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: pharmago-api-gateway
@@ -21,8 +29,15 @@ spec:
               - key: node-type
                 operator: In
                 values: [backend, all]
+      # Tiempo para drenar requests en curso antes de SIGKILL (preStop + apagado de la app)
+      terminationGracePeriodSeconds: 30
       containers:
       - name: pharmago-api-gateway
+        # Espera a que el pod salga de los Endpoints del Service antes de recibir SIGTERM
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "sleep 10"]
         image: pharmago-api-gateway:latest
         imagePullPolicy: Never
         ports:
