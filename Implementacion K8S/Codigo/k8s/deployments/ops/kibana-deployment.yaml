@@ -20,14 +20,9 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: workload-pool
+              - key: node-type
                 operator: In
-                values: [observability]
-      tolerations:
-        - key: dedicated
-          operator: Equal
-          value: observability
-          effect: NoSchedule
+                values: [ops, all]
       containers:
       - name: kibana
         image: docker.elastic.co/kibana/kibana:8.11.0
