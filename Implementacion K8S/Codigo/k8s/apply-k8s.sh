@@ -44,6 +44,7 @@ kubectl apply -f configmaps/otel-collector-config.yaml
 kubectl apply -f configmaps/grafana-provisioning.yaml
 kubectl apply -f configmaps/grafana-dashboards.yaml
 kubectl apply -f configmaps/grafana-dashboard-infra.yaml
+kubectl apply -f configmaps/grafana-alerting.yaml
 kubectl apply -f configmaps/fluent-bit-config.yaml
 
 echo ""
@@ -115,7 +116,17 @@ fi
 
 # Resto de servicios ops
 kubectl apply -f services/ops/otel-collector-service.yaml
+kubectl apply -f deployments/ops/otel-collector-rbac.yaml
 kubectl apply -f deployments/ops/otel-collector-deployment.yaml
+
+kubectl apply -f services/ops/jaeger-service.yaml
+kubectl apply -f deployments/ops/jaeger-deployment.yaml
+
+# Fluent Bit: recolecta los logs JSON de los pods y los envía a Elasticsearch
+kubectl apply -f deployments/ops/fluent-bit-serviceaccount.yaml
+kubectl apply -f deployments/ops/fluent-bit-clusterrole.yaml
+kubectl apply -f deployments/ops/fluent-bit-clusterrolebinding.yaml
+kubectl apply -f deployments/ops/fluent-bit-daemonset.yaml
 
 kubectl apply -f deployments/ops/prometheus-serviceaccount.yaml
 kubectl apply -f deployments/ops/prometheus-clusterrole.yaml
