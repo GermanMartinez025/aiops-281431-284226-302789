@@ -1,6 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Exporter;
 using AspNetCoreRateLimit;
 using PharmaGo.ApiGateway.Middleware;
 using Instrumentation;
@@ -41,16 +43,31 @@ builder.Services.AddReverseProxy()
 
 builder.Services.AddSingleton<ICustomMetrics, CustomMetrics>();
 
+void ConfigureOtlpExporter(OtlpExporterOptions options)
+{
+    options.Endpoint = new Uri("http://otlp-collector:4317");
+    options.Protocol = OtlpExportProtocol.Grpc;
+}
+
 builder.Services.AddOpenTelemetry()
-    .WithMetrics(metricsBuilder => 
+    .WithMetrics(metricsBuilder =>
     {
         metricsBuilder
             .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("PharmaGo.ApiGateway"))
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation()
             .AddMeter("PharmaGo.CustomMetrics")
-            .AddPrometheusExporter();
-    });
+            .AddPrometheusExporter()
+            .AddOtlpExporter(ConfigureOtlpExporter);
+    })
+    // Trazas: el gateway inicia la traza y la propaga (traceparent) a los microservicios vía YARP
+    .WithTracing(tracingBuilder => tracingBuilder
+        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("PharmaGo.ApiGateway"))
+        .AddAspNetCoreInstrumentation(options => options.Filter = context =>
+            !context.Request.Path.StartsWithSegments("/health") &&
+            !context.Request.Path.StartsWithSegments("/metrics"))
+        .AddHttpClientInstrumentation()
+        .AddOtlpExporter(ConfigureOtlpExporter));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

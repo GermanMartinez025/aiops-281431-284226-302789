@@ -65,6 +65,11 @@ kubectl port-forward svc/grafana 3000:3000 -n pharmago &
 echo $! >> "$PID_FILE"
 echo "  Grafana:      http://127.0.0.1:3000 (admin/admin)"
 
+# Jaeger (trazas)
+kubectl port-forward svc/jaeger 16686:16686 -n pharmago &
+echo $! >> "$PID_FILE"
+echo "  Jaeger:       http://127.0.0.1:16686"
+
 # Kibana
 kubectl port-forward svc/kibana 5601:5601 -n pharmago &
 echo $! >> "$PID_FILE"

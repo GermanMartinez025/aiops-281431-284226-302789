@@ -13,19 +13,16 @@ spec:
       labels:
         app: otlp-collector
     spec:
+      # Necesario para recolectar métricas de cAdvisor a través del API server
+      serviceAccountName: otel-collector
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: workload-pool
+              - key: node-type
                 operator: In
-                values: [observability]
-      tolerations:
-        - key: dedicated
-          operator: Equal
-          value: observability
-          effect: NoSchedule
+                values: [ops, all]
       containers:
       - name: otlp-collector
         image: otel/opentelemetry-collector-contrib:latest

@@ -4,7 +4,7 @@ metadata:
   name: pharmago-pharmacy-service
   namespace: pharmago
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: pharmago-pharmacy-service
@@ -12,29 +12,15 @@ spec:
     metadata:
       labels:
         app: pharmago-pharmacy-service
-        pharmago.io/workload: application
     spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: workload-pool
+              - key: node-type
                 operator: In
-                values: [application]
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchLabels:
-                  pharmago.io/workload: application
-              topologyKey: kubernetes.io/hostname
-      tolerations:
-        - key: dedicated
-          operator: Equal
-          value: application
-          effect: NoSchedule
+                values: [backend, all]
       containers:
       - name: pharmago-pharmacy-service
         image: pharmago-pharmacy-service:latest
@@ -66,17 +52,21 @@ spec:
             port: 80
           initialDelaySeconds: 15
           periodSeconds: 10
+          timeoutSeconds: 2
           failureThreshold: 15
         readinessProbe:
           httpGet:
-            path: /health
+            path: /health/ready
             port: 80
-          initialDelaySeconds: 5
-          periodSeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+          successThreshold: 1
         livenessProbe:
           httpGet:
             path: /health
             port: 80
-          initialDelaySeconds: 60
-          periodSeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 3
 

@@ -18,14 +18,9 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: workload-pool
+              - key: node-type
                 operator: In
-                values: [observability]
-      tolerations:
-        - key: dedicated
-          operator: Equal
-          value: observability
-          effect: NoSchedule
+                values: [ops, all]
       securityContext:
         fsGroup: 0
       initContainers:
@@ -72,6 +67,9 @@ spec:
         - name: grafana-dashboard-infra
           mountPath: /etc/grafana/provisioning/dashboards/pharmago-infra.json
           subPath: pharmago-infra.json
+        - name: grafana-alerting
+          mountPath: /etc/grafana/provisioning/alerting/pharmago-alerts.yaml
+          subPath: pharmago-alerts.yaml
         resources:
           requests:
             memory: "256Mi"
@@ -113,4 +111,7 @@ spec:
       - name: grafana-dashboard-infra
         configMap:
           name: grafana-dashboard-infra
+      - name: grafana-alerting
+        configMap:
+          name: grafana-alerting
 
