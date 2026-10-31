@@ -10,15 +10,57 @@ data:
         protocols:
           grpc:
             endpoint: "0.0.0.0:4317"
+      # Métricas de infraestructura: el Collector recolecta node-exporter (nodo) y cAdvisor (contenedores)
+      # y las entrega a Prometheus junto con las métricas OTLP de la aplicación
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: 'node-exporter'
+              scrape_interval: 15s
+              static_configs:
+                - targets: ['node-exporter:9100']
+            - job_name: 'kubernetes-cadvisor'
+              scrape_interval: 15s
+              scheme: https
+              kubernetes_sd_configs:
+                - role: node
+              tls_config:
+                ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              authorization:
+                credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+              relabel_configs:
+                - target_label: __address__
+                  replacement: kubernetes.default.svc:443
+                - source_labels: [__meta_kubernetes_node_name]
+                  regex: (.+)
+                  target_label: __metrics_path__
+                  # $$ escapa el $ para que el Collector no lo tome como variable de entorno
+                  replacement: /api/v1/nodes/$${1}/proxy/metrics/cadvisor
+                - source_labels: [__meta_kubernetes_node_name]
+                  target_label: node
+
+    processors:
+      batch: {}
 
     exporters:
       prometheus:
         endpoint: "0.0.0.0:8889"
-      debug: {}
+        # Agrega service.name (y demás atributos del resource) como labels para distinguir cada microservicio
+        resource_to_telemetry_conversion:
+          enabled: true
+      # Trazas hacia Jaeger, que recibe OTLP de forma nativa
+      otlp/jaeger:
+        endpoint: "jaeger:4317"
+        tls:
+          insecure: true
 
     service:
       pipelines:
         metrics:
+          receivers: [otlp, prometheus]
+          processors: [batch]
+          exporters: [prometheus]
+        traces:
           receivers: [otlp]
-          exporters: [prometheus, debug]
-
+          processors: [batch]
+          exporters: [otlp/jaeger]

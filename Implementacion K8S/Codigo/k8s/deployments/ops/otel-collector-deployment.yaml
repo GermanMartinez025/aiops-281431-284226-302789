@@ -13,6 +13,8 @@ spec:
       labels:
         app: otlp-collector
     spec:
+      # Necesario para recolectar métricas de cAdvisor a través del API server
+      serviceAccountName: otel-collector
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
