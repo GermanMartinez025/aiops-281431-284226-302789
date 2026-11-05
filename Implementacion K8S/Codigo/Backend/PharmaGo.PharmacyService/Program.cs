@@ -1,5 +1,7 @@
 using PharmaGo.PharmacyService.Factory;
 using PharmaGo.PharmacyService.Filters;
+using PharmaGo.PharmacyService.HealthChecks;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using System.Diagnostics.CodeAnalysis;
 using Instrumentation;
 
@@ -14,7 +16,12 @@ builder.Services.AddControllers(options => options.Filters.Add(typeof(ExceptionF
 
 builder.Services.AddControllers();
 
-builder.Services.AddHealthChecks();
+builder.Services
+    .AddHealthChecks()
+    .AddCheck<SqlReadinessHealthCheck>(
+        "sql",
+        tags: new[] { "ready" },
+        timeout: TimeSpan.FromSeconds(2));
 
 builder.Services.AddPharmaGoOpenTelemetryMetrics("PharmaGo.PharmacyService");
 
@@ -45,7 +52,14 @@ app.UseServiceCorrelationScope();
 
 app.UseAuthorization();
 
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = _ => false
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
 app.UseMetricsMiddleware();
 
 app.MapControllers();

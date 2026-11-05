@@ -20,14 +20,9 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: workload-pool
+              - key: node-type
                 operator: In
-                values: [data]
-      tolerations:
-        - key: dedicated
-          operator: Equal
-          value: data
-          effect: NoSchedule
+                values: [ops, all]
       securityContext:
         fsGroup: 0
       # InitContainer para configurar permisos del volumen

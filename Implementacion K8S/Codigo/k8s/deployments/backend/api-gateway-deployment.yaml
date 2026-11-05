@@ -12,29 +12,15 @@ spec:
     metadata:
       labels:
         app: pharmago-api-gateway
-        pharmago.io/workload: application
     spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: workload-pool
+              - key: node-type
                 operator: In
-                values: [application]
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchLabels:
-                  pharmago.io/workload: application
-              topologyKey: kubernetes.io/hostname
-      tolerations:
-        - key: dedicated
-          operator: Equal
-          value: application
-          effect: NoSchedule
+                values: [backend, all]
       containers:
       - name: pharmago-api-gateway
         image: pharmago-api-gateway:latest
@@ -44,6 +30,18 @@ spec:
         env:
         - name: ASPNETCORE_ENVIRONMENT
           value: "Production"
+        - name: RateLimiting__Mode
+          value: "IP"
+        - name: IpRateLimiting__RealIpHeader
+          value: ""
+        - name: IpRateLimiting__ClientIdHeader
+          value: ""
+        - name: CircuitBreaker__Pharmacy__Enabled
+          value: "true"
+        - name: CircuitBreaker__Pharmacy__FailureThreshold
+          value: "5"
+        - name: CircuitBreaker__Pharmacy__BreakDurationSeconds
+          value: "15"
         # Recursos reducidos para nodos ~5GB (proyecto docente)
         resources:
           requests:
