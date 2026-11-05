@@ -1,0 +1,261 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alerting
+  namespace: pharmago
+data:
+  # Reglas de alerta provisionadas en Grafana. Cada regla: A = consulta PromQL, B = último valor, C = umbral.
+  pharmago-alerts.yaml: |
+    apiVersion: 1
+    groups:
+      - orgId: 1
+        name: Infraestructura
+        folder: PharmaGo Alertas
+        interval: 1m
+        rules:
+          - uid: pharmago-node-cpu
+            title: CPU alta en nodo
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: '100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
+              - refId: B
+                datasourceUid: __expr__
+                model: { refId: B, type: reduce, expression: A, reducer: last }
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  refId: C
+                  type: threshold
+                  expression: B
+                  conditions: [{ evaluator: { type: gt, params: [80] } }]
+            for: 5m
+            noDataState: OK
+            execErrState: Error
+            labels: { severity: warning }
+            annotations:
+              summary: 'Uso de CPU mayor a 80% durante 5 minutos'
+              description: 'El nodo {{ $labels.instance }} está usando {{ printf "%.1f" $values.B.Value }}% de CPU.'
+              accion: 'Identificar el pod que más CPU consume en ese nodo (kubectl top pods); si es la aplicación, escalar réplicas o revisar el último despliegue.'
+
+          - uid: pharmago-node-memory
+            title: Memoria alta en nodo
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: '(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100'
+              - refId: B
+                datasourceUid: __expr__
+                model: { refId: B, type: reduce, expression: A, reducer: last }
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  refId: C
+                  type: threshold
+                  expression: B
+                  conditions: [{ evaluator: { type: gt, params: [85] } }]
+            for: 5m
+            noDataState: OK
+            execErrState: Error
+            labels: { severity: warning }
+            annotations:
+              summary: 'Uso de memoria mayor a 85% durante 5 minutos'
+              description: 'El nodo {{ $labels.instance }} está usando {{ printf "%.1f" $values.B.Value }}% de memoria.'
+              accion: 'Identificar el pod que más memoria consume (kubectl top pods); evaluar reiniciarlo o mover carga a otro nodo antes de que haya OOMKills.'
+
+          - uid: pharmago-node-disk
+            title: Disco casi lleno en nodo
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: '(1 - (node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay|squashfs"})) * 100'
+              - refId: B
+                datasourceUid: __expr__
+                model: { refId: B, type: reduce, expression: A, reducer: last }
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  refId: C
+                  type: threshold
+                  expression: B
+                  conditions: [{ evaluator: { type: gt, params: [85] } }]
+            for: 5m
+            noDataState: OK
+            execErrState: Error
+            labels: { severity: critical }
+            annotations:
+              summary: 'Disco del nodo con más de 85% de uso'
+              description: 'El disco raíz del nodo {{ $labels.instance }} está al {{ printf "%.1f" $values.B.Value }}%.'
+              accion: 'Liberar espacio: revisar volúmenes de Elasticsearch y Prometheus, reducir retención de logs/métricas o limpiar imágenes sin uso.'
+
+          - uid: pharmago-node-network-anomaly
+            title: Tráfico de red anómalo en nodo
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange: { from: 3600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  # Cociente entre el tráfico entrante actual y su promedio de la última hora
+                  expr: 'sum by (instance) (rate(node_network_receive_bytes_total{device!~"lo|veth.*|docker.*|cni.*|flannel.*"}[5m])) / (avg_over_time(sum by (instance) (rate(node_network_receive_bytes_total{device!~"lo|veth.*|docker.*|cni.*|flannel.*"}[5m]))[1h:1m]) > 0)'
+              - refId: B
+                datasourceUid: __expr__
+                model: { refId: B, type: reduce, expression: A, reducer: last }
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  refId: C
+                  type: threshold
+                  expression: B
+                  conditions: [{ evaluator: { type: gt, params: [3] } }]
+            for: 2m
+            noDataState: OK
+            execErrState: Error
+            labels: { severity: warning }
+            annotations:
+              summary: 'Tráfico de red entrante 3 veces mayor a su promedio de la última hora'
+              description: 'El nodo {{ $labels.instance }} recibe {{ printf "%.1f" $values.B.Value }} veces su tráfico habitual.'
+              accion: 'Verificar si coincide con un pico de solicitudes (posible ataque o carga inusual); revisar rate limiting y logs del API Gateway.'
+
+      - orgId: 1
+        name: Aplicacion
+        folder: PharmaGo Alertas
+        interval: 1m
+        rules:
+          - uid: pharmago-container-memory
+            title: Contenedor cerca del límite de memoria
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: 'max by (pod, container) (container_memory_working_set_bytes{namespace="pharmago",container!="",container!="POD"} / (container_spec_memory_limit_bytes{namespace="pharmago",container!="",container!="POD"} > 0)) * 100'
+              - refId: B
+                datasourceUid: __expr__
+                model: { refId: B, type: reduce, expression: A, reducer: last }
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  refId: C
+                  type: threshold
+                  expression: B
+                  conditions: [{ evaluator: { type: gt, params: [90] } }]
+            for: 2m
+            noDataState: OK
+            execErrState: Error
+            labels: { severity: critical }
+            annotations:
+              summary: 'Contenedor usando más del 90% de su límite de memoria (riesgo de OOMKill)'
+              description: 'El contenedor {{ $labels.container }} del pod {{ $labels.pod }} está al {{ printf "%.1f" $values.B.Value }}% de su límite.'
+              accion: 'Revisar si hay una fuga de memoria (crecimiento sostenido en Grafana); reiniciar el pod o ajustar su límite de memoria.'
+
+          - uid: pharmago-http-error-rate
+            title: Tasa de errores HTTP alta
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: 'sum(rate(pharmago_http_errors_total[5m])) / (sum(rate(pharmago_http_requests_total[5m])) > 0) * 100'
+              - refId: B
+                datasourceUid: __expr__
+                model: { refId: B, type: reduce, expression: A, reducer: last }
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  refId: C
+                  type: threshold
+                  expression: B
+                  conditions: [{ evaluator: { type: gt, params: [5] } }]
+            for: 3m
+            noDataState: OK
+            execErrState: Error
+            labels: { severity: critical }
+            annotations:
+              summary: 'Más del 5% de las solicitudes terminan con error'
+              description: 'La tasa de errores de la aplicación es {{ printf "%.1f" $values.B.Value }}%.'
+              accion: 'Filtrar en Kibana level:"error" del servicio afectado y seguir su trace_id en Jaeger; si coincide con un despliegue, hacer rollback.'
+
+          - uid: pharmago-http-latency-p95
+            title: Latencia p95 alta
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange: { from: 600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  expr: 'histogram_quantile(0.95, sum by (le) (rate(pharmago_http_request_duration_milliseconds_bucket[5m])))'
+              - refId: B
+                datasourceUid: __expr__
+                model: { refId: B, type: reduce, expression: A, reducer: last }
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  refId: C
+                  type: threshold
+                  expression: B
+                  conditions: [{ evaluator: { type: gt, params: [1000] } }]
+            for: 5m
+            noDataState: OK
+            execErrState: Error
+            labels: { severity: warning }
+            annotations:
+              summary: 'El 5% más lento de las solicitudes tarda más de 1 segundo'
+              description: 'La latencia p95 de la aplicación es {{ printf "%.0f" $values.B.Value }} ms.'
+              accion: 'Abrir en Jaeger las trazas más lentas para identificar el servicio o la consulta SQL que demora; revisar CPU y memoria de ese pod.'
+
+          - uid: pharmago-traffic-anomaly
+            title: Pico anómalo de solicitudes
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange: { from: 3600, to: 0 }
+                datasourceUid: prometheus
+                model:
+                  refId: A
+                  instant: true
+                  # Cociente entre las solicitudes por segundo actuales y su promedio de la última hora
+                  expr: 'sum(rate(pharmago_http_requests_total[5m])) / (avg_over_time(sum(rate(pharmago_http_requests_total[5m]))[1h:1m]) > 0)'
+              - refId: B
+                datasourceUid: __expr__
+                model: { refId: B, type: reduce, expression: A, reducer: last }
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  refId: C
+                  type: threshold
+                  expression: B
+                  conditions: [{ evaluator: { type: gt, params: [3] } }]
+            for: 2m
+            noDataState: OK
+            execErrState: Error
+            labels: { severity: warning }
+            annotations:
+              summary: 'Solicitudes 3 veces por encima de su promedio de la última hora'
+              description: 'La aplicación recibe {{ printf "%.1f" $values.B.Value }} veces su volumen habitual de solicitudes.'
+              accion: 'Confirmar si es tráfico legítimo o un ataque (IPs en logs del gateway); verificar que el rate limiting esté respondiendo 429.'
