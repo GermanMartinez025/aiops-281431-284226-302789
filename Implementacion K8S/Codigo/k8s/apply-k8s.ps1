@@ -55,10 +55,7 @@ Write-Host "`n5. Creando StorageClass y PersistentVolumes..." -ForegroundColor Y
 kubectl apply -f persistent-volumes\storage-class.yaml
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
-# Eliminar PVs existentes en estado Released para recrearlos
-Write-Host "   Limpiando PVs existentes..." -ForegroundColor Cyan
-kubectl delete pv sql-pv elasticsearch-pv prometheus-pv grafana-pv --ignore-not-found=true
-Start-Sleep -Seconds 2
+# Conservar los PVs existentes: borrar un PV Bound bloquea el despliegue.
 
 kubectl apply -f persistent-volumes\sql-pv.yaml
 kubectl apply -f persistent-volumes\elasticsearch-pv.yaml
@@ -76,7 +73,8 @@ Write-Host "`n   Esperando a que la base de datos esté lista..." -ForegroundCol
 $timeout = 0
 $maxTimeout = 300
 do {
-    $podReady = kubectl get pod -l app=pharmago-db -n pharmago -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>&1
+    $pod = kubectl get pod -l app=pharmago-db -n pharmago -o json | ConvertFrom-Json
+    $podReady = ($pod.items[0].status.conditions | Where-Object { $_.type -eq 'Ready' }).status
     if ($podReady -eq "True") {
         Write-Host "   Base de datos lista!" -ForegroundColor Green
         break
@@ -84,8 +82,7 @@ do {
     Start-Sleep -Seconds 5
     $timeout += 5
     if ($timeout -ge $maxTimeout) {
-        Write-Host "   Timeout esperando la base de datos. Continuando..." -ForegroundColor Yellow
-        break
+        throw "Timeout esperando la base de datos. Despliegue detenido."
     }
     Write-Host "   Esperando... ($timeout/$maxTimeout segundos)" -ForegroundColor Cyan
 } while ($true)
@@ -100,7 +97,8 @@ Write-Host "   Esperando a que Elasticsearch esté listo..." -ForegroundColor Ye
 $timeout = 0
 $maxTimeout = 300
 do {
-    $podReady = kubectl get pod -l app=elasticsearch -n pharmago -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>&1
+    $pod = kubectl get pod -l app=elasticsearch -n pharmago -o json | ConvertFrom-Json
+    $podReady = ($pod.items[0].status.conditions | Where-Object { $_.type -eq 'Ready' }).status
     if ($podReady -eq "True") {
         Write-Host "   Elasticsearch listo!" -ForegroundColor Green
         break
@@ -108,8 +106,7 @@ do {
     Start-Sleep -Seconds 5
     $timeout += 5
     if ($timeout -ge $maxTimeout) {
-        Write-Host "   Timeout esperando Elasticsearch. Continuando..." -ForegroundColor Yellow
-        break
+        throw "Timeout esperando Elasticsearch. Despliegue detenido."
     }
     Write-Host "   Esperando... ($timeout/$maxTimeout segundos)" -ForegroundColor Cyan
 } while ($true)
@@ -132,6 +129,15 @@ kubectl apply -f deployments\ops\grafana-deployment.yaml
 kubectl apply -f services\ops\kibana-service.yaml
 kubectl apply -f deployments\ops\kibana-deployment.yaml
 
+if ($LASTEXITCODE -ne 0) { exit 1 }
+
+kubectl apply -f deployments\ops\fluent-bit-serviceaccount.yaml
+if ($LASTEXITCODE -ne 0) { exit 1 }
+kubectl apply -f deployments\ops\fluent-bit-clusterrole.yaml
+if ($LASTEXITCODE -ne 0) { exit 1 }
+kubectl apply -f deployments\ops\fluent-bit-clusterrolebinding.yaml
+if ($LASTEXITCODE -ne 0) { exit 1 }
+kubectl apply -f deployments\ops\fluent-bit-daemonset.yaml
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
 Write-Host "`n8. Desplegando servicios backend..." -ForegroundColor Yellow
@@ -157,7 +163,19 @@ kubectl apply -f policies\pod-disruption-budgets.yaml
 
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
-Write-Host "`n=== Despliegue completado ===" -ForegroundColor Green
+Write-Host "`n11. Esperando disponibilidad de todos los componentes..." -ForegroundColor Yellow
+$deployments = kubectl get deployments -n pharmago -o name
+if ($LASTEXITCODE -ne 0) { exit 1 }
+foreach ($deployment in $deployments) {
+    kubectl rollout status $deployment -n pharmago --timeout=300s
+    if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+foreach ($daemonSet in @("fluent-bit", "node-exporter")) {
+    kubectl rollout status "daemonset/$daemonSet" -n pharmago --timeout=300s
+    if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+
+Write-Host "`n=== Despliegue completado y disponible ===" -ForegroundColor Green
 Write-Host "`nVerificando estado de los pods..." -ForegroundColor Yellow
 kubectl get pods -n pharmago -o wide
 

@@ -86,7 +86,8 @@ while [ $timeout -lt $max_timeout ]; do
     echo "   Esperando... ($timeout/$max_timeout segundos)"
 done
 if [ $timeout -ge $max_timeout ]; then
-    echo "   Timeout esperando la base de datos. Continuando..."
+    echo "   Timeout esperando la base de datos. Despliegue detenido."
+    exit 1
 fi
 
 echo ""
@@ -110,7 +111,8 @@ while [ $timeout -lt $max_timeout ]; do
     echo "   Esperando... ($timeout/$max_timeout segundos)"
 done
 if [ $timeout -ge $max_timeout ]; then
-    echo "   Timeout esperando Elasticsearch. Continuando..."
+    echo "   Timeout esperando Elasticsearch. Despliegue detenido."
+    exit 1
 fi
 
 # Resto de servicios ops
@@ -158,7 +160,14 @@ echo "10. Aplicando PodDisruptionBudgets..."
 kubectl apply -f policies/pod-disruption-budgets.yaml
 
 echo ""
-echo "=== Despliegue completado ==="
+echo "11. Esperando disponibilidad de todos los componentes..."
+for deployment in $(kubectl get deployments -n pharmago -o name); do
+    kubectl rollout status "$deployment" -n pharmago --timeout=300s
+done
+kubectl rollout status daemonset/fluent-bit -n pharmago --timeout=300s
+kubectl rollout status daemonset/node-exporter -n pharmago --timeout=300s
+
+echo "=== Despliegue completado y disponible ==="
 echo ""
 echo "Verificando estado de los pods..."
 kubectl get pods -n pharmago -o wide

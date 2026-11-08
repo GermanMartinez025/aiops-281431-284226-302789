@@ -5,7 +5,7 @@ metadata:
   namespace: pharmago
 spec:
   # Despliegue seguro: Rolling Update sin pérdida de capacidad
-  replicas: 2
+  replicas: 1
   revisionHistoryLimit: 5
   minReadySeconds: 10
   strategy:
