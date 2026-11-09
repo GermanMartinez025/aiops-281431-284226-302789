@@ -76,6 +76,32 @@ minikube image load pharmago-ui:latest
 
 **Nota**: `minikube image load` carga las imágenes en el nodo de Minikube.
 
+### Actualizar el API Gateway
+
+El manifiesto usa `pharmago-api-gateway:latest` con `imagePullPolicy: Never`. Después de construir y cargar una imagen nueva, aplica los manifiestos para que el pod use la imagen cargada. `apply-k8s.sh` y `apply-k8s.ps1` agregan un reinicio explícito solo del Deployment del Gateway y esperan hasta 120 segundos a que termine el rollout. Los scripts también siguen aplicando los manifiestos del resto de los componentes; sus pods pueden actualizarse si cambia su plantilla.
+
+Para el flujo completo, desde `Implementacion K8S/Codigo`:
+
+```bash
+cd k8s
+./build-images.sh
+./apply-k8s.sh
+```
+
+Para actualizar solo el Gateway, desde `Implementacion K8S/Codigo`:
+
+```bash
+cd Backend
+docker build -f PharmaGo.ApiGateway/Dockerfile -t pharmago-api-gateway:latest .
+cd ..
+minikube --profile minikube image load pharmago-api-gateway:latest
+kubectl --context=minikube -n pharmago apply -f k8s/deployments/backend/api-gateway-deployment.yaml
+kubectl --context=minikube -n pharmago rollout restart deployment/pharmago-api-gateway
+kubectl --context=minikube -n pharmago rollout status deployment/pharmago-api-gateway --timeout=120s
+```
+
+Construir la imagen no cambia el pod existente: la nueva imagen debe cargarse en Minikube y el Gateway debe reiniciarse tras aplicar. Si el reemplazo del pod interrumpe el port-forward activo, vuelve a iniciarlo.
+
 ## Despliegue
 
 **IMPORTANTE**: Asegúrate de haber construido y cargado las imágenes Docker primero (paso 3).

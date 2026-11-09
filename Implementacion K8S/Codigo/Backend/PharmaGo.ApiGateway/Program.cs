@@ -5,6 +5,7 @@ using OpenTelemetry.Trace;
 using OpenTelemetry.Exporter;
 using AspNetCoreRateLimit;
 using PharmaGo.ApiGateway.Middleware;
+using PharmaGo.ApiGateway.Resilience;
 using Instrumentation;
 using InstrumentationInterface;
 using Yarp.ReverseProxy.Transforms;
@@ -12,6 +13,8 @@ using Yarp.ReverseProxy.Transforms;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddMemoryCache();
+
+builder.Services.AddSingleton<PharmacyCircuitBreaker>();
 
 var rateLimitMode = builder.Configuration["RateLimiting:Mode"] ?? "IP";
 
@@ -107,7 +110,13 @@ else if (rateLimitMode.Equals("User", StringComparison.OrdinalIgnoreCase))
 
 app.UseAuthorization();
 
-app.MapReverseProxy();
+app.MapReverseProxy(proxyPipeline =>
+{
+    proxyPipeline.UseMiddleware<PharmacyCircuitBreakerMiddleware>();
+    proxyPipeline.UseSessionAffinity();
+    proxyPipeline.UseLoadBalancing();
+    proxyPipeline.UsePassiveHealthChecks();
+});
 app.MapPrometheusScrapingEndpoint();
 
 app.Run();

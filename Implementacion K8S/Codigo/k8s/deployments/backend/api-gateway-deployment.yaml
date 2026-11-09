@@ -30,6 +30,18 @@ spec:
         env:
         - name: ASPNETCORE_ENVIRONMENT
           value: "Production"
+        - name: RateLimiting__Mode
+          value: "IP"
+        - name: IpRateLimiting__RealIpHeader
+          value: ""
+        - name: IpRateLimiting__ClientIdHeader
+          value: ""
+        - name: CircuitBreaker__Pharmacy__Enabled
+          value: "true"
+        - name: CircuitBreaker__Pharmacy__FailureThreshold
+          value: "5"
+        - name: CircuitBreaker__Pharmacy__BreakDurationSeconds
+          value: "15"
         # Recursos reducidos para nodos ~5GB (proyecto docente)
         resources:
           requests:
