@@ -11,6 +11,26 @@ La aplicación se ejecuta en un único nodo (minikube) con todos los componentes
 - **Base de datos**: pharmago-db (SQL Server Express)
 - **Telemetría y observabilidad**: otlp-collector, prometheus, grafana, elasticsearch, kibana, fluent-bit
 
+### Flujo de telemetría en Kubernetes
+
+- Gateway, Users y Pharmacy envían métricas y trazas por OTLP/gRPC al Collector (`otlp-collector:4317`). Las trazas continúan hacia Jaeger.
+- El Collector recibe métricas de aplicación por OTLP y adapta node-exporter/cAdvisor mediante scraping; exporta todas las métricas por OTLP/HTTP protobuf al receptor interno de Prometheus (`http://prometheus:9090/api/v1/otlp/v1/metrics`). No se expone un endpoint de métricas del Collector ni Prometheus lo scrapea.
+- Prometheus usa `UnderscoreEscapingWithSuffixes` y promueve solo `service.name`, `service.instance.id` y `service.namespace`. Grafana consulta Prometheus; CPU/memoria por contenedor excluye series vacías y `POD`, y las métricas de nodo conservan el label `node`.
+- Los tags de Prometheus y Collector están fijados a `prom/prometheus:v3.16.0` y `otel/opentelemetry-collector-contrib:0.165.0`. El Collector corre con una réplica y estrategia `Recreate` porque recolecta infraestructura.
+- node-exporter se descubre por pods en `pharmago`; el Collector recibe permisos de lectura de pods solo en ese namespace. Las métricas describen el nodo donde corre Kubernetes (Minikube puede ser una VM o contenedor), no prueban por sí solas el hardware físico del equipo.
+
+Los manifiestos describen configuración deseada; no acreditan una ejecución ni ingesta actual. Para comprobar el estado actual, revisa pods y Services, la bandera del receptor OTLP de Prometheus y el endpoint configurado en el Collector:
+
+```bash
+kubectl get pods -n pharmago -o wide
+kubectl get services otlp-collector prometheus -n pharmago -o wide
+kubectl get deployment prometheus -n pharmago -o yaml | grep -- '--web.enable-otlp-receiver'
+kubectl get configmap otel-collector-config -n pharmago -o yaml | grep 'metrics_endpoint:'
+kubectl logs deployment/otlp-collector -n pharmago --since=5m
+```
+
+Para aplicar selectivamente, usa los manifiestos específicos de ConfigMap, RBAC, Service y Deployments. No uses el script completo como mecanismo de actualización de telemetría: incluye pasos ajenos a este cambio, entre ellos operaciones sobre volúmenes persistentes.
+
 **Requisito de memoria**: El nodo debe tener al menos 5-6GB de RAM para soportar Elasticsearch (1.5Gi), Kibana (2Gi), SQL Server Express (1.5Gi) y el resto de servicios.
 
 ## Prerrequisitos

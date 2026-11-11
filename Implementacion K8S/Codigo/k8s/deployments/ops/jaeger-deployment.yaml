@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: pharmago
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-type
+                operator: In
+                values: [ops, all]
+      initContainers:
+      # Las trazas se guardan en Elasticsearch: esperar a que esté disponible antes de arrancar
+      - name: wait-for-elasticsearch
+        image: busybox:1.36
+        command: ['sh', '-c', 'until wget -q -O- http://elasticsearch:9200/_cluster/health; do echo "Waiting for Elasticsearch..."; sleep 5; done']
+      containers:
+      - name: jaeger
+        # All-in-one: recibe OTLP del Collector, guarda las trazas en Elasticsearch y expone la UI
+        image: jaegertracing/all-in-one:1.57.0
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 16686
+          name: ui
+        env:
+        - name: COLLECTOR_OTLP_ENABLED
+          value: "true"
+        # Almacenamiento persistente: reutiliza el Elasticsearch de los logs (índices jaeger-span-* / jaeger-service-*),
+        # así las trazas sobreviven a reinicios de Jaeger
+        - name: SPAN_STORAGE_TYPE
+          value: "elasticsearch"
+        - name: ES_SERVER_URLS
+          value: "http://elasticsearch:9200"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "384Mi"
+            cpu: "250m"
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 14269
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 14269
+          initialDelaySeconds: 15
+          periodSeconds: 30

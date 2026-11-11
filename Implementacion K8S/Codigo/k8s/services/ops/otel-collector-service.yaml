@@ -11,9 +11,5 @@ spec:
     targetPort: 4317
     protocol: TCP
     name: otlp-grpc
-  - port: 8889
-    targetPort: 8889
-    protocol: TCP
-    name: prometheus
   type: ClusterIP
 
