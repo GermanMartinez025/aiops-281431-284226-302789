@@ -71,8 +71,8 @@ namespace Instrumentation
         }
 
         /// <summary>
-        /// Marca eventos de negocio para Kibana: <c>pharma_biz=...</c> (legible) + token <c>EVT...</c> (una sola palabra,
-        /// sin = ni _, para que Lucene encuentre con <c>log:EVTPUCR</c> sin comodines prohibidos en campos analizados).
+        /// Marca eventos de negocio con <c>pharma_biz</c>; las búsquedas estructuradas en Kibana usan el scope
+        /// <c>Scopes.pharma_biz:"purchase_create"</c>.
         /// </summary>
         private static string AppendPharmaBizSuffix(string message, Dictionary<string, object>? metadata)
         {
@@ -85,7 +85,7 @@ namespace Instrumentation
             return $"{message} pharma_biz={biz} {kibanaToken}";
         }
 
-        /// <summary>Tokens únicos para búsqueda Lucene tipo <c>log:EVTPUCR</c> (el analizador suele pasarlos a minúsculas).</summary>
+        /// <summary>Token añadido al mensaje; buscar el evento por el scope estructurado <c>Scopes.pharma_biz:"purchase_create"</c>.</summary>
         private static string? PharmaBizToKibanaToken(string pharmaBiz) => pharmaBiz switch
         {
             "login_success" => "EVTLGOK",
