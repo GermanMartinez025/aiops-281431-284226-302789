@@ -10,17 +10,32 @@ data:
         protocols:
           grpc:
             endpoint: "0.0.0.0:4317"
-      # Métricas de infraestructura: el Collector recolecta node-exporter (nodo) y cAdvisor (contenedores)
-      # y las entrega a Prometheus junto con las métricas OTLP de la aplicación
+      # cAdvisor y node-exporter son adaptados a OTLP antes de entrar en Prometheus.
       prometheus:
         config:
           scrape_configs:
-            - job_name: 'node-exporter'
+            - job_name: node-exporter
               scrape_interval: 15s
-              static_configs:
-                - targets: ['node-exporter:9100']
-            - job_name: 'kubernetes-cadvisor'
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names: [pharmago]
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  action: keep
+                  regex: node-exporter
+                - source_labels: [__meta_kubernetes_pod_container_port_number]
+                  action: keep
+                  regex: "9100"
+                - source_labels: [__meta_kubernetes_pod_node_name]
+                  regex: (.+)
+                  target_label: node
+                - source_labels: [__meta_kubernetes_pod_node_name]
+                  regex: (.+)
+                  target_label: instance
+            - job_name: kubernetes-cadvisor
               scrape_interval: 15s
+              honor_timestamps: false
               scheme: https
               kubernetes_sd_configs:
                 - role: node
@@ -34,23 +49,37 @@ data:
                 - source_labels: [__meta_kubernetes_node_name]
                   regex: (.+)
                   target_label: __metrics_path__
-                  # $$ escapa el $ para que el Collector no lo tome como variable de entorno
                   replacement: /api/v1/nodes/$${1}/proxy/metrics/cadvisor
                 - source_labels: [__meta_kubernetes_node_name]
                   target_label: node
 
     processors:
-      batch: {}
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      batch:
+        timeout: 5s
+        send_batch_size: 512
+        send_batch_max_size: 512
 
     exporters:
-      prometheus:
-        endpoint: "0.0.0.0:8889"
-        # Agrega service.name (y demás atributos del resource) como labels para distinguir cada microservicio
-        resource_to_telemetry_conversion:
+      otlphttp/prometheus:
+        metrics_endpoint: http://prometheus:9090/api/v1/otlp/v1/metrics
+        compression: gzip
+        timeout: 10s
+        sending_queue:
           enabled: true
-      # Trazas hacia Jaeger, que recibe OTLP de forma nativa
+          num_consumers: 1
+          queue_size: 256
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 10s
+          max_elapsed_time: 60s
+      # Trazas hacia Jaeger, que recibe OTLP de forma nativa.
       otlp/jaeger:
-        endpoint: "jaeger:4317"
+        endpoint: jaeger:4317
         tls:
           insecure: true
 
@@ -58,9 +87,9 @@ data:
       pipelines:
         metrics:
           receivers: [otlp, prometheus]
-          processors: [batch]
-          exporters: [prometheus]
+          processors: [memory_limiter, batch]
+          exporters: [otlphttp/prometheus]
         traces:
           receivers: [otlp]
-          processors: [batch]
+          processors: [memory_limiter, batch]
           exporters: [otlp/jaeger]

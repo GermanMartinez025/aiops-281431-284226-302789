@@ -6,15 +6,11 @@ metadata:
 data:
   prometheus.yml: |
     global:
-      scrape_interval: 5s
+      scrape_interval: 15s
 
-    scrape_configs:
-      # Todas las métricas llegan a Prometheus a través del OpenTelemetry Collector (:8889):
-      #  - aplicación (Gateway, Users, Pharmacy): enviadas por OTLP
-      #  - nodo (node-exporter) y contenedores (cAdvisor): recolectadas por el Collector
-      # honor_labels conserva el job/instance de origen (ej. job="node-exporter") en lugar de "otlp-collector".
-      - job_name: 'otlp-collector'
-        metrics_path: /metrics
-        honor_labels: true
-        static_configs:
-          - targets: ['otlp-collector:8889']
+    otlp:
+      translation_strategy: UnderscoreEscapingWithSuffixes
+      promote_resource_attributes:
+        - service.name
+        - service.instance.id
+        - service.namespace

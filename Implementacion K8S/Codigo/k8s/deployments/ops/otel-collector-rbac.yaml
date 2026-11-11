@@ -26,3 +26,28 @@ subjects:
   - kind: ServiceAccount
     name: otel-collector
     namespace: pharmago
+---
+# Permisos de descubrimiento limitados a los pods del namespace de la aplicación.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: otel-collector-pod-discovery
+  namespace: pharmago
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: otel-collector-pod-discovery
+  namespace: pharmago
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: otel-collector-pod-discovery
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: pharmago
