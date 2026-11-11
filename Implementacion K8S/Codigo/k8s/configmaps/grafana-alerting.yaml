@@ -209,7 +209,7 @@ data:
                 model:
                   refId: A
                   instant: true
-                  expr: 'histogram_quantile(0.95, sum by (le) (rate(pharmago_http_request_duration_milliseconds_bucket{service_name="PharmaGo.ApiGateway",endpoint!~"/health.*|/metrics.*|/test-health.*"}[5m])))'
+                  expr: '(histogram_quantile(0.95, sum by (le) (rate(pharmago_http_request_duration_milliseconds_bucket{service_name="PharmaGo.ApiGateway",endpoint!~"/health.*|/metrics.*|/test-health.*"}[5m]))) and on() (sum(rate(pharmago_http_request_duration_milliseconds_count{service_name="PharmaGo.ApiGateway",endpoint!~"/health.*|/metrics.*|/test-health.*"}[5m])) > 0))'
               - refId: B
                 datasourceUid: __expr__
                 model: { refId: B, type: reduce, expression: A, reducer: last }
@@ -226,7 +226,7 @@ data:
             labels: { severity: warning }
             annotations:
               summary: 'El 5% más lento de las solicitudes tarda más de 1 segundo'
-              description: 'La latencia p95 de la aplicación es {{ printf "%.0f" $values.B.Value }} ms.'
+              description: 'La latencia p95 de la aplicación es {{ printf "%.0f" $values.B.Value }} ms. Sin solicitudes observadas en los últimos 5 minutos, la consulta queda en NoData.'
               accion: 'Abrir en Jaeger las trazas más lentas para identificar el servicio o la consulta SQL que demora; revisar CPU y memoria de ese pod.'
 
           - uid: pharmago-traffic-anomaly
