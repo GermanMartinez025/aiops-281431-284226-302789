@@ -142,12 +142,6 @@ kubectl apply -f deployments/ops/grafana-deployment.yaml
 kubectl apply -f services/ops/kibana-service.yaml
 kubectl apply -f deployments/ops/kibana-deployment.yaml
 
-# Fluent Bit: recolecta logs de pods y los envía a Elasticsearch (pharmago-logs-*)
-kubectl apply -f deployments/ops/fluent-bit-serviceaccount.yaml
-kubectl apply -f deployments/ops/fluent-bit-clusterrole.yaml
-kubectl apply -f deployments/ops/fluent-bit-clusterrolebinding.yaml
-kubectl apply -f deployments/ops/fluent-bit-daemonset.yaml
-
 echo ""
 echo "8. Desplegando servicios backend..."
 kubectl apply -f services/backend/users-service-service.yaml

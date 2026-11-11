@@ -25,15 +25,12 @@ data:
         Name              tail
         Tag               kube.*
         Path              /var/log/containers/*.log
-        Parser            docker
+        multiline.parser docker, cri
         DB                /var/log/flb_kube.db
         Mem_Buf_Limit     5MB
         # JSON app logs (scopes, State) are often longer than SQL fragments; skipping them removes Message/Category from ES.
         Skip_Long_Lines   Off
         Buffer_Max_Size   1MB
-        # Reensambla líneas partidas por el driver de logs de Docker (>~16KB) en un solo registro.
-        Docker_Mode       On
-        Docker_Mode_Flush 5
         Refresh_Interval   10
 
   filter-kubernetes.conf: |
@@ -49,14 +46,15 @@ data:
         K8S-Logging.Parser  On
         K8S-Logging.Exclude  Off
 
-    # When "log" is a single-line JSON object (.NET console JSON), lift Message, Category, LogLevel, etc. to top-level for KQL.
-    # Non-JSON lines (e.g. SQL) are unchanged — no "Message" field, so they do not match Message-based queries.
+    # Promote structured .NET JSON fields for KQL; keep Kubernetes metadata but do not duplicate the raw JSON line.
+    # Non-JSON lines (e.g. SQL) are unchanged and are not covered by Message-based searches.
     [FILTER]
         Name                parser
         Match               kube.*
         Key_Name            log
         Parser              dotnet_console_json
         Reserve_Data        On
+        Preserve_Key        Off
 
   output-elasticsearch.conf: |
     [OUTPUT]
@@ -72,13 +70,6 @@ data:
         Suppress_Type_Name  On
 
   parsers.conf: |
-    [PARSER]
-        Name        docker
-        Format      json
-        Time_Key    time
-        Time_Format %Y-%m-%dT%H:%M:%S.%L
-        Time_Keep   On
-
     [PARSER]
         Name        dotnet_console_json
         Format      json
