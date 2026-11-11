@@ -35,7 +35,7 @@ data:
                   expression: B
                   conditions: [{ evaluator: { type: gt, params: [80] } }]
             for: 5m
-            noDataState: OK
+            noDataState: NoData
             execErrState: Error
             labels: { severity: warning }
             annotations:
@@ -65,7 +65,7 @@ data:
                   expression: B
                   conditions: [{ evaluator: { type: gt, params: [85] } }]
             for: 5m
-            noDataState: OK
+            noDataState: NoData
             execErrState: Error
             labels: { severity: warning }
             annotations:
@@ -83,7 +83,7 @@ data:
                 model:
                   refId: A
                   instant: true
-                  expr: '(1 - (node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay|squashfs"})) * 100'
+                  expr: 'max by (instance, node, device) ((1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs",mountpoint!~"/etc/.*"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs",mountpoint!~"/etc/.*"})) * 100)'
               - refId: B
                 datasourceUid: __expr__
                 model: { refId: B, type: reduce, expression: A, reducer: last }
@@ -95,13 +95,13 @@ data:
                   expression: B
                   conditions: [{ evaluator: { type: gt, params: [85] } }]
             for: 5m
-            noDataState: OK
+            noDataState: NoData
             execErrState: Error
             labels: { severity: critical }
             annotations:
-              summary: 'Disco del nodo con más de 85% de uso'
-              description: 'El disco raíz del nodo {{ $labels.instance }} está al {{ printf "%.1f" $values.B.Value }}%.'
-              accion: 'Liberar espacio: revisar volúmenes de Elasticsearch y Prometheus, reducir retención de logs/métricas o limpiar imágenes sin uso.'
+              summary: 'Filesystem observado del nodo con más de 85% de uso'
+              description: 'El filesystem observado en el nodo {{ $labels.node }} (dispositivo {{ $labels.device }}) está al {{ printf "%.1f" $values.B.Value }}%. Esto no identifica necesariamente el filesystem raíz.'
+              accion: 'Inspeccionar los mountpoints respaldados por el dispositivo observado y el uso de sus volúmenes; no asumir que corresponde a la raíz del host físico.'
 
           - uid: pharmago-node-network-anomaly
             title: Tráfico de red anómalo en nodo
@@ -126,7 +126,7 @@ data:
                   expression: B
                   conditions: [{ evaluator: { type: gt, params: [3] } }]
             for: 2m
-            noDataState: OK
+            noDataState: NoData
             execErrState: Error
             labels: { severity: warning }
             annotations:
@@ -149,7 +149,7 @@ data:
                 model:
                   refId: A
                   instant: true
-                  expr: 'max by (pod, container) (container_memory_working_set_bytes{namespace="pharmago",container!="",container!="POD"} / (container_spec_memory_limit_bytes{namespace="pharmago",container!="",container!="POD"} > 0)) * 100'
+                  expr: '(max by (node, namespace, pod, container) (container_memory_working_set_bytes{namespace="pharmago",container!="",container!="POD"}) / on (node, namespace, pod, container) max by (node, namespace, pod, container) (container_spec_memory_limit_bytes{namespace="pharmago",container!="",container!="POD"} > 0)) * 100'
               - refId: B
                 datasourceUid: __expr__
                 model: { refId: B, type: reduce, expression: A, reducer: last }
@@ -161,12 +161,12 @@ data:
                   expression: B
                   conditions: [{ evaluator: { type: gt, params: [90] } }]
             for: 2m
-            noDataState: OK
+            noDataState: NoData
             execErrState: Error
             labels: { severity: critical }
             annotations:
               summary: 'Contenedor usando más del 90% de su límite de memoria (riesgo de OOMKill)'
-              description: 'El contenedor {{ $labels.container }} del pod {{ $labels.pod }} está al {{ printf "%.1f" $values.B.Value }}% de su límite.'
+              description: 'El contenedor {{ $labels.container }} del pod {{ $labels.pod }} en el nodo {{ $labels.node }} está al {{ printf "%.1f" $values.B.Value }}% de su límite.'
               accion: 'Revisar si hay una fuga de memoria (crecimiento sostenido en Grafana); reiniciar el pod o ajustar su límite de memoria.'
 
           - uid: pharmago-http-error-rate
@@ -179,7 +179,7 @@ data:
                 model:
                   refId: A
                   instant: true
-                  expr: 'sum(rate(pharmago_http_errors_total[5m])) / (sum(rate(pharmago_http_requests_total[5m])) > 0) * 100'
+                  expr: '(sum(rate(pharmago_http_requests_total{service_name="PharmaGo.ApiGateway",endpoint!~"/health.*|/metrics.*|/test-health.*",status_code=~"4..|5.."}[5m])) or (0 * sum(rate(pharmago_http_requests_total{service_name="PharmaGo.ApiGateway",endpoint!~"/health.*|/metrics.*|/test-health.*"}[5m])))) / (sum(rate(pharmago_http_requests_total{service_name="PharmaGo.ApiGateway",endpoint!~"/health.*|/metrics.*|/test-health.*"}[5m])) > 0) * 100'
               - refId: B
                 datasourceUid: __expr__
                 model: { refId: B, type: reduce, expression: A, reducer: last }
@@ -191,13 +191,13 @@ data:
                   expression: B
                   conditions: [{ evaluator: { type: gt, params: [5] } }]
             for: 3m
-            noDataState: OK
+            noDataState: NoData
             execErrState: Error
             labels: { severity: critical }
             annotations:
               summary: 'Más del 5% de las solicitudes terminan con error'
               description: 'La tasa de errores de la aplicación es {{ printf "%.1f" $values.B.Value }}%.'
-              accion: 'Filtrar en Kibana level:"error" del servicio afectado y seguir su trace_id en Jaeger; si coincide con un despliegue, hacer rollback.'
+              accion: 'Filtrar en Kibana `LogLevel:"Error"` y correlacionar con Jaeger mediante `Scopes.TraceId`; si coincide con un despliegue, hacer rollback.'
 
           - uid: pharmago-http-latency-p95
             title: Latencia p95 alta
@@ -209,7 +209,7 @@ data:
                 model:
                   refId: A
                   instant: true
-                  expr: 'histogram_quantile(0.95, sum by (le) (rate(pharmago_http_request_duration_milliseconds_bucket[5m])))'
+                  expr: 'histogram_quantile(0.95, sum by (le) (rate(pharmago_http_request_duration_milliseconds_bucket{service_name="PharmaGo.ApiGateway",endpoint!~"/health.*|/metrics.*|/test-health.*"}[5m])))'
               - refId: B
                 datasourceUid: __expr__
                 model: { refId: B, type: reduce, expression: A, reducer: last }
@@ -221,7 +221,7 @@ data:
                   expression: B
                   conditions: [{ evaluator: { type: gt, params: [1000] } }]
             for: 5m
-            noDataState: OK
+            noDataState: NoData
             execErrState: Error
             labels: { severity: warning }
             annotations:
@@ -240,7 +240,7 @@ data:
                   refId: A
                   instant: true
                   # Cociente entre las solicitudes por segundo actuales y su promedio de la última hora
-                  expr: 'sum(rate(pharmago_http_requests_total[5m])) / (avg_over_time(sum(rate(pharmago_http_requests_total[5m]))[1h:1m]) > 0)'
+                  expr: 'sum(rate(pharmago_http_requests_total{service_name="PharmaGo.ApiGateway",endpoint!~"/health.*|/metrics.*|/test-health.*"}[5m])) / (avg_over_time(sum(rate(pharmago_http_requests_total{service_name="PharmaGo.ApiGateway",endpoint!~"/health.*|/metrics.*|/test-health.*"}[5m]))[1h:1m]) > 0)'
               - refId: B
                 datasourceUid: __expr__
                 model: { refId: B, type: reduce, expression: A, reducer: last }
@@ -252,7 +252,7 @@ data:
                   expression: B
                   conditions: [{ evaluator: { type: gt, params: [3] } }]
             for: 2m
-            noDataState: OK
+            noDataState: NoData
             execErrState: Error
             labels: { severity: warning }
             annotations:
