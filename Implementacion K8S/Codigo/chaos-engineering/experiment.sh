@@ -80,6 +80,8 @@ fi
 for tool in kubectl curl jq awk sort mktemp; do
   command -v "$tool" >/dev/null || fail "falta $tool"
 done
+# Con jq.exe, conservar LF al capturar nombres y otros valores en Bash.
+jq() { command jq -b "$@"; }
 [[ $(kubectl config current-context) == "$CONTEXT" ]] || fail "contexto activo distinto de $CONTEXT"
 k() { MSYS_NO_PATHCONV=1 kubectl --context="$CONTEXT" --namespace="$NAMESPACE" --request-timeout=10s "$@"; }
 deployment=$(k get deployment "$DEPLOYMENT" -o json)
@@ -270,8 +272,8 @@ case $mode in
     available=$(k get deploy "$DEPLOYMENT" -o jsonpath='{.status.availableReplicas}')
     [[ $available == "$desired" ]] || fail "cambió la disponibilidad"
     # La precondición UID protege contra reutilización del nombre.
-    jq -nc --arg uid "$target_uid" \
-      '{apiVersion:"policy/v1",kind:"Eviction",deleteOptions:{preconditions:{uid:$uid}}}' |
+    jq -nc --arg name "$pod" --arg namespace "$NAMESPACE" --arg uid "$target_uid" \
+      '{apiVersion:"policy/v1",kind:"Eviction",metadata:{name:$name,namespace:$namespace},deleteOptions:{preconditions:{uid:$uid}}}' |
       k create --raw "/api/v1/namespaces/$NAMESPACE/pods/$pod/eviction" -f - >"$out/eviction.json"
     known=$(jq -c '[.items[].metadata.uid]' <<<"$selected")
     deadline=$((SECONDS + DURATION))
