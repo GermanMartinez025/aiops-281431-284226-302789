@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rolling-update-observer
+  namespace: pharmago
+  labels:
+    app: rolling-update-observer
+spec:
+  restartPolicy: Never
+  containers:
+  - name: observer
+    image: node:22-alpine
+    command: ["node", "/scripts/availability.mjs"]
+    readinessProbe:
+      exec:
+        command: ["node", "-e", "require('node:fs').accessSync('/tmp/rolling-update/started')"]
+      periodSeconds: 1
+    env:
+    - name: DURATION_SECONDS
+      value: "420"
+    - name: TARGETS_JSON
+      value: >-
+        [{"name":"ui","url":"http://pharmago-ui/","contains":"<app-root"},
+         {"name":"users","url":"http://pharmago-users-service/api/roles","kind":"json-array"},
+         {"name":"pharmacy","url":"http://pharmago-pharmacy-service/api/drug","kind":"json-array"},
+         {"name":"gateway-users","url":"http://pharmago-api-gateway/api/roles","kind":"json-array"},
+         {"name":"gateway-pharmacy","url":"http://pharmago-api-gateway/api/drug","kind":"json-array"}]
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 250m, memory: 128Mi }
+    volumeMounts:
+    - name: script
+      mountPath: /scripts
+      readOnly: true
+  volumes:
+  - name: script
+    configMap:
+      name: rolling-update-observer
