@@ -1,6 +1,8 @@
 # Script de despliegue para Kubernetes (Minikube)
 # Uso: .\apply-k8s.ps1
 
+param([switch]$Multinode)
+
 Write-Host "=== Desplegando PharmaGo en Kubernetes ===" -ForegroundColor Green
 
 # Verificar que kubectl está disponible
@@ -9,30 +11,25 @@ if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# Verificar que el cluster Kubernetes está accesible
-$nodes = kubectl get nodes -o jsonpath='{.items[*].metadata.name}' 2>&1
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrEmpty($nodes)) {
-    Write-Host "Error: No hay cluster Kubernetes accesible. Si usas Minikube: minikube start (o minikube start --nodes 3)" -ForegroundColor Red
-    exit 1
+if ($Multinode) {
+    foreach ($role in @('frontend', 'gateway', 'users', 'pharmacy', 'data', 'ops')) {
+        $nodes = @(kubectl get nodes -l "node-type=$role" -o name)
+        if ($LASTEXITCODE -ne 0 -or $nodes.Count -ne 1) {
+            throw "Se requiere exactamente un nodo con node-type=$role."
+        }
+    }
+    $localNodes = @(kubectl get nodes -l node-type=all -o name)
+    if ($LASTEXITCODE -ne 0) { throw 'No se pudieron consultar las etiquetas de los nodos.' }
+    if ($localNodes.Count -gt 0) { throw 'Retire node-type=all antes del despliegue multinodo.' }
+} else {
+    $nodes = @(kubectl get nodes -o name)
+    if ($LASTEXITCODE -ne 0 -or $nodes.Count -ne 1) {
+        throw 'El modo local requiere un nodo. Para varios nodos use -Multinode.'
+    }
+    kubectl label $nodes[0] node-type=all --overwrite
+    if ($LASTEXITCODE -ne 0) { throw 'No se pudo etiquetar el nodo local.' }
 }
 
-# Etiquetar nodos (requerido para que los pods de telemetría se programen)
-Write-Host "`n1. Etiquetando nodos..." -ForegroundColor Yellow
-$nodeList = $nodes.Trim().Split(" ", [StringSplitOptions]::RemoveEmptyEntries)
-if ($nodeList.Count -eq 1) {
-    Write-Host "   Cluster de 1 nodo detectado. Etiquetando $($nodeList[0]) con node-type=all" -ForegroundColor Cyan
-    kubectl label nodes $nodeList[0] node-type=all --overwrite 2>$null
-} elseif ($nodeList.Count -ge 3) {
-    Write-Host "   Cluster multi-nodo detectado. Etiquetando nodos..." -ForegroundColor Cyan
-    kubectl label nodes minikube node-type=frontend --overwrite 2>$null
-    kubectl label nodes minikube-m02 node-type=backend --overwrite 2>$null
-    kubectl label nodes minikube-m03 node-type=ops --overwrite 2>$null
-} else {
-    $firstNode = $nodeList[0]
-    Write-Host "   Etiquetando nodo $firstNode con node-type=all (compatibilidad)" -ForegroundColor Cyan
-    kubectl label nodes $firstNode node-type=all --overwrite 2>$null
-}
-Write-Host "   Verificar: kubectl get nodes --show-labels" -ForegroundColor Gray
 
 Write-Host "`n2. Creando namespace..." -ForegroundColor Yellow
 kubectl apply -f namespace.yaml
@@ -56,10 +53,15 @@ Write-Host "`n5. Creando StorageClass y PersistentVolumes..." -ForegroundColor Y
 kubectl apply -f persistent-volumes\storage-class.yaml
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
-# Eliminar PVs existentes en estado Released para recrearlos
-Write-Host "   Limpiando PVs existentes..." -ForegroundColor Cyan
-kubectl delete pv sql-pv elasticsearch-pv prometheus-pv grafana-pv --ignore-not-found=true
-Start-Sleep -Seconds 2
+# Limpiar únicamente volúmenes huérfanos.
+foreach ($pv in @('sql-pv', 'elasticsearch-pv', 'prometheus-pv', 'grafana-pv')) {
+    $phase = kubectl get pv $pv --ignore-not-found -o jsonpath='{.status.phase}'
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo consultar el volumen $pv." }
+    if ($phase -in @('Released', 'Failed')) {
+        kubectl delete pv $pv --ignore-not-found=true
+        if ($LASTEXITCODE -ne 0) { throw "No se pudo eliminar el volumen huérfano $pv." }
+    }
+}
 
 kubectl apply -f persistent-volumes\sql-pv.yaml
 kubectl apply -f persistent-volumes\elasticsearch-pv.yaml

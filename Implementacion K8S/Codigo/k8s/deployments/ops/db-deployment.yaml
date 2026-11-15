@@ -22,7 +22,7 @@ spec:
             - matchExpressions:
               - key: node-type
                 operator: In
-                values: [ops, all]
+                values: [data, all]
       securityContext:
         fsGroup: 0
       # InitContainer para configurar permisos del volumen

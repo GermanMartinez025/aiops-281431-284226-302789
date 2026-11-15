@@ -12,22 +12,37 @@ if ! command -v kubectl &> /dev/null; then
     exit 1
 fi
 
-# Verificar que minikube está corriendo
-if ! minikube status &> /dev/null; then
-    echo "Error: Minikube no está corriendo."
-    echo "Ejecuta: minikube start --memory=6144 --cpus=4"
-    exit 1
-fi
+# Los nodos del clúster multinodo se etiquetan explícitamente antes de desplegar.
+mode=${1:-}
+case "$mode" in
+    --multinode)
+        for role in frontend gateway users pharmacy data ops; do
+            nodes=$(kubectl get nodes -l "node-type=$role" -o name)
+            if [[ -z "$nodes" || "$nodes" == *$'\n'* ]]; then
+                echo "Error: se requiere exactamente un nodo con node-type=$role." >&2
+                exit 1
+            fi
+        done
+        local_nodes=$(kubectl get nodes -l node-type=all -o name)
+        if [[ -n "$local_nodes" ]]; then
+            echo "Error: retire node-type=all antes del despliegue multinodo." >&2
+            exit 1
+        fi
+        ;;
+    "")
+        nodes=$(kubectl get nodes -o name)
+        if [[ -z "$nodes" || "$nodes" == *$'\n'* ]]; then
+            echo "Error: el modo local requiere un nodo. Para varios nodos use --multinode." >&2
+            exit 1
+        fi
+        kubectl label "$nodes" node-type=all --overwrite
+        ;;
+    *)
+        echo "Uso: ./apply-k8s.sh [--multinode]" >&2
+        exit 1
+        ;;
+esac
 
-echo ""
-echo "1. Etiquetando nodo (requerido para que los pods se programen)..."
-NODE_NAME=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-if [ -n "$NODE_NAME" ]; then
-    kubectl label nodes $NODE_NAME node-type=all --overwrite 2>/dev/null || true
-    echo "   Nodo $NODE_NAME etiquetado con node-type=all"
-else
-    echo "   No se pudo obtener el nombre del nodo. Continuando..."
-fi
 
 echo ""
 echo "2. Creando namespace..."
