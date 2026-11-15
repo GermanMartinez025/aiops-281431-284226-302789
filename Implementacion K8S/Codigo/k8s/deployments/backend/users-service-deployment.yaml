@@ -5,6 +5,14 @@ metadata:
   namespace: pharmago
 spec:
   replicas: 1
+  minReadySeconds: 10
+  progressDeadlineSeconds: 300
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: pharmago-users-service
@@ -13,6 +21,7 @@ spec:
       labels:
         app: pharmago-users-service
     spec:
+      terminationGracePeriodSeconds: 30
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -25,9 +34,15 @@ spec:
       - name: pharmago-users-service
         image: pharmago-users-service:latest
         imagePullPolicy: Never
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
         ports:
         - containerPort: 80
         env:
+        - name: Database__MigrateOnStartup
+          value: "false"
         - name: ConnectionStrings__DefaultConnection
           value: "Server=pharmago-db;Database=PharmaDb;User Id=sa;Password=Str0ngP@ssword!"
         - name: ServiceUrls__PharmacyService
@@ -55,7 +70,7 @@ spec:
           failureThreshold: 15
         readinessProbe:
           httpGet:
-            path: /health
+            path: /health/ready
             port: 80
           initialDelaySeconds: 5
           periodSeconds: 10
