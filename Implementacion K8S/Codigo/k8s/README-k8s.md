@@ -31,7 +31,7 @@ kubectl logs deployment/otlp-collector -n pharmago --since=5m
 
 Para aplicar selectivamente, usa los manifiestos específicos de ConfigMap, RBAC, Service y Deployments. No uses el script completo como mecanismo de actualización de telemetría: incluye pasos ajenos a este cambio, entre ellos operaciones sobre volúmenes persistentes.
 
-**Requisito de memoria**: El nodo debe tener al menos 5-6GB de RAM para soportar Elasticsearch (1.5Gi), Kibana (2Gi), SQL Server Express (1.5Gi) y el resto de servicios.
+**Requisito de memoria**: dimensionar el nodo para consumo real, Kubernetes y pods adicionales; se recomienda partir de 8GB de RAM para soportar Elasticsearch (1.5Gi), Kibana (2Gi), SQL Server Express (2Gi) y el resto de servicios.
 
 ## Prerrequisitos
 
@@ -41,17 +41,17 @@ Para aplicar selectivamente, usa los manifiestos específicos de ConfigMap, RBAC
 
 ## Configuración Inicial
 
-### 1. Crear cluster Minikube (un nodo, 6GB RAM)
+### 1. Crear cluster Minikube (un nodo, 8GB RAM)
 
 ```bash
 # Crear cluster con suficiente memoria para telemetría (Elasticsearch, Kibana, etc.)
-minikube start --memory=6144 --cpus=4
+minikube start --memory=8192 --cpus=4
 
 # Verificar nodo
 kubectl get nodes
 ```
 
-**Importante**: Usa al menos 6GB de RAM. Con menos, Elasticsearch y otros pods de observabilidad pueden fallar por OOM.
+**Importante**: reservar margen para Kubernetes, consumo real y pods de surge. Los 8GB son un punto de partida, no una garantia de estabilidad.
 
 ### 2. Etiquetar nodo
 
@@ -60,118 +60,27 @@ El script `apply-k8s.sh` etiqueta el nodo automáticamente con `node-type=all`. 
 kubectl label nodes minikube node-type=all --overwrite
 ```
 
-### 3. Construir y cargar imágenes Docker
+### 3. Construir, instalar y actualizar
 
-**IMPORTANTE**: Usa `minikube image load` para cargar las imágenes en Minikube (no `minikube docker-env`).
+Se requiere Node >= 18 para los scripts de control. Las imagenes se construyen con
+tags unicos y se conservan para rollback. No volver a aplicar plantillas con
+`latest` encima de una version controlada.
 
-#### Opción 1: Script automatizado (Recomendado)
+Para una instalacion NUEVA (namespace y PV del proyecto ausentes):
 
-```bash
-cd k8s
-chmod +x build-images.sh
-./build-images.sh
+```powershell
+.\build-images.ps1 -Tag rollout-v1
+.\apply-k8s.ps1 -Tag rollout-v1
 ```
 
-#### Opción 2: Manual
+El instalador no borra volumenes y se detiene si ya existe la instalacion. Para
+una instalacion existente, usar el procedimiento de preparacion de base y luego
+`update-app.ps1` o `update-app.sh`. El actualizador verifica disponibilidad y
+realiza rollback automatico ante fallo o timeout de 300 s. No actualiza SQL.
 
-Desde el directorio `Implementacion K8S/Codigo`:
-
-```bash
-# Construir imágenes de backend
-cd Backend
-docker build -f PharmaGo.UsersService/Dockerfile -t pharmago-users-service:latest .
-minikube image load pharmago-users-service:latest
-
-docker build -f PharmaGo.PharmacyService/Dockerfile -t pharmago-pharmacy-service:latest .
-minikube image load pharmago-pharmacy-service:latest
-
-docker build -f PharmaGo.ApiGateway/Dockerfile -t pharmago-api-gateway:latest .
-minikube image load pharmago-api-gateway:latest
-
-# Construir imagen de frontend
-cd ../Frontend
-docker build -f Dockerfile -t pharmago-ui:latest .
-minikube image load pharmago-ui:latest
-```
-
-**Nota**: `minikube image load` carga las imágenes en el nodo de Minikube.
-
-### Actualizar el API Gateway
-
-El manifiesto usa `pharmago-api-gateway:latest` con `imagePullPolicy: Never`. Después de construir y cargar una imagen nueva, aplica los manifiestos para que el pod use la imagen cargada. `apply-k8s.sh` y `apply-k8s.ps1` agregan un reinicio explícito solo del Deployment del Gateway y esperan hasta 120 segundos a que termine el rollout. Los scripts también siguen aplicando los manifiestos del resto de los componentes; sus pods pueden actualizarse si cambia su plantilla.
-
-Para el flujo completo, desde `Implementacion K8S/Codigo`:
-
-```bash
-cd k8s
-./build-images.sh
-./apply-k8s.sh
-```
-
-Para actualizar solo el Gateway, desde `Implementacion K8S/Codigo`:
-
-```bash
-cd Backend
-docker build -f PharmaGo.ApiGateway/Dockerfile -t pharmago-api-gateway:latest .
-cd ..
-minikube --profile minikube image load pharmago-api-gateway:latest
-kubectl --context=minikube -n pharmago apply -f k8s/deployments/backend/api-gateway-deployment.yaml
-kubectl --context=minikube -n pharmago rollout restart deployment/pharmago-api-gateway
-kubectl --context=minikube -n pharmago rollout status deployment/pharmago-api-gateway --timeout=120s
-```
-
-Construir la imagen no cambia el pod existente: la nueva imagen debe cargarse en Minikube y el Gateway debe reiniciarse tras aplicar. Si el reemplazo del pod interrumpe el port-forward activo, vuelve a iniciarlo.
-
-## Despliegue
-
-**IMPORTANTE**: Asegúrate de haber construido y cargado las imágenes Docker primero (paso 3).
-
-### Opción 1: Script automatizado (Recomendado)
-
-```bash
-cd k8s
-chmod +x apply-k8s.sh
-./apply-k8s.sh
-```
-
-### Opción 2: Despliegue manual
-
-```bash
-cd k8s
-
-# 1. Namespace
-kubectl apply -f namespace.yaml
-
-# 2. Secrets
-kubectl apply -f secrets/db-secret.yaml
-
-# 3. ConfigMaps
-kubectl apply -f configmaps/
-
-# 4. PersistentVolumes
-kubectl apply -f persistent-volumes/
-
-# 5. Database
-kubectl apply -f services/ops/db-service.yaml
-kubectl apply -f deployments/ops/db-deployment.yaml
-kubectl wait --for=condition=ready pod -l app=pharmago-db -n pharmago --timeout=300s
-
-# 6. Ops services (Elasticsearch primero)
-kubectl apply -f services/ops/elasticsearch-service.yaml
-kubectl apply -f deployments/ops/elasticsearch-deployment.yaml
-kubectl wait --for=condition=ready pod -l app=elasticsearch -n pharmago --timeout=300s
-
-kubectl apply -f services/ops/
-kubectl apply -f deployments/ops/
-
-# 7. Backend services
-kubectl apply -f services/backend/
-kubectl apply -f deployments/backend/
-
-# 8. Frontend
-kubectl apply -f services/frontend/
-kubectl apply -f deployments/frontend/
-```
+La tecnica, sus limites, los comandos y el guion reproducible para el video estan
+en [ROLLING-UPDATE.md](ROLLING-UPDATE.md). Ese documento distingue pruebas locales
+de evidencias de trafico reales durante el reemplazo.
 
 ## Verificación
 
@@ -273,7 +182,7 @@ kubectl apply -f deployments/<component>/<deployment>.yaml
 Si los pods de telemetría (otel-collector, prometheus, grafana, elasticsearch, kibana, fluent-bit) quedan en `Pending`:
 
 1. **Falta etiqueta en el nodo**: Los pods requieren `node-type=all`.
-   - Usa el script `apply-k8s.sh` que etiqueta automáticamente, o
+   - El instalador inicial etiqueta automáticamente; no reinstalar para corregir una etiqueta.
    - Manual: `kubectl label nodes minikube node-type=all --overwrite`
    
    ```bash
@@ -299,12 +208,14 @@ Si los pods fallan con `ImagePullBackOff`:
    minikube image ls | grep pharmago
    ```
 
-2. Si faltan imágenes, reconstruirlas y cargarlas:
+2. Si faltan imágenes, construir una version nueva y cargarlas:
    ```bash
-   ./build-images.sh
+   ./build-images.sh --tag recuperacion-v1
    ```
 
-3. Verificar que los deployments usan `imagePullPolicy: Never` (ya configurado).
+3. Verificar `imagePullPolicy: Never` y usar `update-app` con esa nueva version.
+   Si la base ya esta indisponible, seguir la preparacion `--bootstrap` de
+   [ROLLING-UPDATE.md](ROLLING-UPDATE.md), sin acreditar cero cortes en esa recuperacion.
 
 ### Base de datos no está lista
 
@@ -352,7 +263,7 @@ Si Elasticsearch está en `CrashLoopBackOff` con `OOMKilled`:
    ```bash
    minikube stop
    minikube delete
-   minikube start --memory=6144 --cpus=4
+   minikube start --memory=8192 --cpus=4
    ```
 
 3. **Reducir memoria heap de Elasticsearch:**
