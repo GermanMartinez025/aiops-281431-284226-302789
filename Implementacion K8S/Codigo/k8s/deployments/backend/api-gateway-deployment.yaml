@@ -20,7 +20,7 @@ spec:
             - matchExpressions:
               - key: node-type
                 operator: In
-                values: [backend, all]
+                values: [gateway, all]
       containers:
       - name: pharmago-api-gateway
         image: pharmago-api-gateway:latest

@@ -19,7 +19,7 @@ spec:
         - key: node-type
           operator: In
           values:
-          - ops
+          - data
           - all
 ---
 apiVersion: v1

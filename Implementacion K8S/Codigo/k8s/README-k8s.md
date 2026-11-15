@@ -126,6 +126,51 @@ Construir la imagen no cambia el pod existente: la nueva imagen debe cargarse en
 
 **IMPORTANTE**: Asegúrate de haber construido y cargado las imágenes Docker primero (paso 3).
 
+### Despliegue multinodo
+
+Usá seis nodos disponibles para programar cargas y asigná una etiqueta
+`node-type` distinta a cada uno. Reemplazá los nombres de nodo del ejemplo.
+
+```shell
+kubectl label node nodo-ui node-type=frontend --overwrite
+kubectl label node nodo-gateway node-type=gateway --overwrite
+kubectl label node nodo-users node-type=users --overwrite
+kubectl label node nodo-pharmacy node-type=pharmacy --overwrite
+kubectl label node nodo-sql node-type=data --overwrite
+kubectl label node nodo-obs node-type=ops --overwrite
+```
+
+Los scripts requieren exactamente un nodo por rol y rechazan la etiqueta
+`node-type=all` en modo multinodo. Las dos réplicas de Pharmacy quedan en su
+nodo dedicado. Node Exporter y Fluent Bit se programan como DaemonSets.
+
+Para una prueba con Minikube, usá un perfil nuevo de seis nodos y cargá las
+imágenes de la aplicación en ese perfil. En otro clúster, importá las imágenes
+en el runtime del nodo correspondiente o configurá las imágenes de un registro
+y su política de descarga antes del despliegue.
+
+Usá volúmenes nuevos para una instalación nueva. Si ya existe un volumen SQL
+ligado a un nodo, planificá su migración y copia de seguridad antes de cambiar el
+rol del nodo: editar la afinidad no mueve los datos de `hostPath`.
+
+Desde el directorio `k8s`, ejecutá `./apply-k8s.sh --multinode` en Bash o
+`.\apply-k8s.ps1 -Multinode` en PowerShell. Sin esa opción, el script configura
+un clúster de un solo nodo.
+
+```shell
+kubectl get nodes -L node-type -o wide
+kubectl get pods -n pharmago -o wide
+kubectl get pv
+```
+
+Verificá que los pods estén Ready y que UI, Gateway, Users y Pharmacy tengan
+valores distintos en la columna NODE. Comprobá también que SQL Server y
+Grafana estén en los nodos data y ops, respectivamente. Para demostrar
+separación física, registrá qué host físico corresponde a cada nodo de
+aplicación. Minikube multinodo sobre una sola máquina permite verificar el
+scheduling, y sus nodos comparten el mismo host físico.
+
+
 ### Opción 1: Script automatizado (Recomendado)
 
 ```bash
