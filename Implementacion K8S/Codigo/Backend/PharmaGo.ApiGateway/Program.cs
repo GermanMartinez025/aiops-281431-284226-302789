@@ -11,6 +11,8 @@ using InstrumentationInterface;
 using Yarp.ReverseProxy.Transforms;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHealthChecks();
 
 builder.Services.AddMemoryCache();
 
@@ -118,6 +120,10 @@ app.MapReverseProxy(proxyPipeline =>
     proxyPipeline.UsePassiveHealthChecks();
 });
 app.MapPrometheusScrapingEndpoint();
+// Readiness local: valida que el host y el proxy hayan iniciado. La disponibilidad
+// de Users/Pharmacy se valida por separado y con una solicitud funcional en el rollout.
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/ready");
 
 app.Run();
 

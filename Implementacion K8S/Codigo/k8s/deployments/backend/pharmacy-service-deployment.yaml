@@ -5,6 +5,14 @@ metadata:
   namespace: pharmago
 spec:
   replicas: 2
+  minReadySeconds: 10
+  progressDeadlineSeconds: 300
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: pharmago-pharmacy-service
@@ -13,6 +21,7 @@ spec:
       labels:
         app: pharmago-pharmacy-service
     spec:
+      terminationGracePeriodSeconds: 30
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -25,6 +34,10 @@ spec:
       - name: pharmago-pharmacy-service
         image: pharmago-pharmacy-service:latest
         imagePullPolicy: Never
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
         ports:
         - containerPort: 80
         env:

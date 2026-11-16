@@ -6,6 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using Instrumentation;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(15));
 
 builder.Logging.SuppressEfAndSqlClientLogs();
 

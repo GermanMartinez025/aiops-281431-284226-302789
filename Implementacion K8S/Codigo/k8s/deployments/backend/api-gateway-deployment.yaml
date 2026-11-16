@@ -5,6 +5,14 @@ metadata:
   namespace: pharmago
 spec:
   replicas: 1
+  minReadySeconds: 10
+  progressDeadlineSeconds: 300
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: pharmago-api-gateway
@@ -13,6 +21,7 @@ spec:
       labels:
         app: pharmago-api-gateway
     spec:
+      terminationGracePeriodSeconds: 30
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -25,6 +34,10 @@ spec:
       - name: pharmago-api-gateway
         image: pharmago-api-gateway:latest
         imagePullPolicy: Never
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
         ports:
         - containerPort: 80
         env:
@@ -51,19 +64,22 @@ spec:
             memory: "384Mi"
             cpu: "500m"
         startupProbe:
-          tcpSocket:
+          httpGet:
+            path: /health
             port: 80
           initialDelaySeconds: 15
           periodSeconds: 10
           failureThreshold: 15
         readinessProbe:
-          tcpSocket:
+          httpGet:
+            path: /health/ready
             port: 80
           initialDelaySeconds: 5
           periodSeconds: 10
           timeoutSeconds: 5
         livenessProbe:
-          tcpSocket:
+          httpGet:
+            path: /health
             port: 80
           initialDelaySeconds: 60
           periodSeconds: 30

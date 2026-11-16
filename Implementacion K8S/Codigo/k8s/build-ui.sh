@@ -1,21 +1,5 @@
-#!/bin/bash
-# Construir y cargar solo pharmago-ui en Minikube
-# Uso: ./build-ui.sh
-
-set -e
-
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-CODE_DIR="$(dirname "$SCRIPT_DIR")"
-
-echo "Construyendo pharmago-ui..."
-cd "$CODE_DIR/Frontend"
-docker build -f Dockerfile -t pharmago-ui:latest .
-
-echo "Cargando en Minikube..."
-minikube image load pharmago-ui:latest
-
-echo "Listo. Reiniciando deployment..."
-kubectl rollout restart deployment pharmago-ui -n pharmago
-
-echo ""
-echo "Verificar: kubectl get pods -n pharmago -l app=pharmago-ui"
+#!/usr/bin/env bash
+# Solo construye/carga; actualizar requiere update-app y prueba funcional.
+set -Eeuo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec node "$SCRIPT_DIR/build-images.mjs" --app ui "$@"
